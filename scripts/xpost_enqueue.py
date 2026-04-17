@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 import json
-import os
 import sys
 import time
 import uuid
@@ -20,6 +19,6 @@ item = {
     'content': payload.rstrip() + '\n'
 }
 
-path = QUEUE_DIR / f"{item['id']}.json"
+path = QUEUE_DIR / f"{item['id']}.queued.json"
 path.write_text(json.dumps(item, indent=2))
 print(path)

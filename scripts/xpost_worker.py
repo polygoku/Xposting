@@ -21,8 +21,14 @@ def log(message: str):
 
 
 def next_item():
-    files = sorted(QUEUE_DIR.glob('*.json'))
-    return files[0] if files else None
+    return sorted(QUEUE_DIR.glob('*.queued.json'))[0] if list(QUEUE_DIR.glob('*.queued.json')) else None
+
+
+def set_state(path: Path, state: str) -> Path:
+    item_id = path.name.split('.')[0]
+    new_path = path.with_name(f'{item_id}.{state}.json')
+    path.rename(new_path)
+    return new_path
 
 
 while True:
@@ -31,7 +37,8 @@ while True:
         time.sleep(2)
         continue
 
-    item = json.loads(item_path.read_text())
+    posting_path = set_state(item_path, 'posting')
+    item = json.loads(posting_path.read_text())
     now = int(time.time())
     if STAMP_FILE.exists():
         try:
@@ -48,11 +55,9 @@ while True:
     result = subprocess.run(POST_CMD, capture_output=True, text=True)
     if result.returncode == 0:
         STAMP_FILE.write_text(str(int(time.time())))
-        done_path = item_path.with_suffix('.done.json')
-        item_path.rename(done_path)
+        set_state(posting_path, 'done')
         log(f"posted {item['id']}")
     else:
-        fail_path = item_path.with_suffix('.failed.json')
-        item_path.rename(fail_path)
+        set_state(posting_path, 'failed')
         log(f"failed {item['id']}: {result.stderr.strip() or result.stdout.strip()}")
         time.sleep(5)
