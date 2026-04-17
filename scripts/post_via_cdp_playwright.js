@@ -1,20 +1,39 @@
 const fs = require('fs');
 const playwright = require('/tmp/cdp-browser/node_modules/playwright');
+
+async function findXPage(browser) {
+  const pages = browser.contexts().flatMap(c => c.pages());
+  return pages.find(p => String(p.url()).includes('x.com')) || pages[0];
+}
+
+async function recoverCompose(page) {
+  const textbox = page.locator('div[role="textbox"][contenteditable="true"], div[data-testid="tweetTextarea_0"]').first();
+  if (await textbox.count().catch(() => 0)) return true;
+
+  const composeLink = page.locator('a[href="/compose/post"], [data-testid="SideNav_NewTweet_Button"]').first();
+  if (await composeLink.count().catch(() => 0)) {
+    await composeLink.dispatchEvent('click').catch(() => {});
+    await page.waitForTimeout(1500);
+    if (await textbox.count().catch(() => 0)) return true;
+  }
+
+  try {
+    await page.goto('https://x.com/compose/post', { waitUntil: 'domcontentloaded', timeout: 15000 });
+    await page.waitForTimeout(1500);
+  } catch (_) {}
+  return (await textbox.count().catch(() => 0)) > 0;
+}
+
 (async () => {
   const text = fs.readFileSync('/tmp/cdp-browser/live-post.txt', 'utf8').trimEnd();
   const browser = await playwright.chromium.connectOverCDP('http://localhost:9222');
-  const tabs = await (await fetch('http://localhost:9222/json/list')).json();
-  const tabId = tabs.find(t => t.type === 'page' && String(t.url || '').includes('x.com'))?.id || tabs.find(t => t.type === 'page')?.id;
-  const tabIndex = tabs.filter(t => t.type === 'page').findIndex(t => t.id === tabId);
-  const allPages = browser.contexts().flatMap(c => c.pages());
-  const page = tabIndex >= 0 ? allPages[tabIndex] : allPages[0];
+  const page = await findXPage(browser);
+  if (!page) throw new Error('No browser page found');
   await page.bringToFront();
-  try {
-    if (!String(page.url()).includes('x.com/compose/post')) {
-      await page.goto('https://x.com/compose/post', { waitUntil: 'domcontentloaded', timeout: 15000 });
-    }
-  } catch (_) {}
-  await page.waitForSelector('div[role="textbox"][contenteditable="true"], div[data-testid="tweetTextarea_0"]', { timeout: 10000 });
+
+  const ok = await recoverCompose(page);
+  if (!ok) throw new Error('Compose textbox not available after recovery flow');
+
   const textbox = page.locator('div[role="textbox"][contenteditable="true"], div[data-testid="tweetTextarea_0"]').first();
   await textbox.click();
   await textbox.fill(text);
